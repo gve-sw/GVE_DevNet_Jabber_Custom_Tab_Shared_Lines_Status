@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Shared Line Status</title>
+
+    <style>
+        /* Adding blinking effect */
+        @keyframes pulsate {
+            0% {
+                opacity: 0.1;
+            }
+
+            40% {
+                opacity: 1.0;
+            }
+
+            60% {
+                opacity: 1.0;
+            }
+
+            100% {
+                opacity: 0.1;
+            }
+        }
+
+        /* Static-circle Green */
+        .IDLE {
+            margin-inline-start: 7px;
+            height: 1.5rem;
+            width: 1.5rem;
+            display: inline-block;
+            border-radius: 4rem;
+
+            opacity: 1.0;
+            background: green;
+        }
+
+        /* Static-circle Gray */
+        .HELD {
+            margin-inline-start: 7px;
+            height: 1.5rem;
+            width: 1.5rem;
+            display: inline-block;
+            border-radius: 4rem;
+
+            opacity: 1.0;
+            background: gray;
+        }
+
+        /* Static-circle Red */
+        .ESTB {
+            margin-inline-start: 7px;
+            height: 1.5rem;
+            width: 1.5rem;
+            display: inline-block;
+            border-radius: 4rem;
+
+            opacity: 1.0;
+            background: red;
+        }
+
+        /* Blinking-circle Orange */
+        .ALERTING {
+            margin-inline-start: 7px;
+            height: 1.5rem;
+            width: 1.5rem;
+            display: inline-block;
+            border-radius: 4rem;
+            opacity: 0.0;
+            animation: pulsate 1000ms ease-out;
+            animation-iteration-count: infinite;
+            transition: background-color 300ms linear;
+            background: rgb(255, 115, 0);
+        }
+
+        .header__title {
+            margin: 0;
+        }
+
+        ul {
+            padding: 0;
+            height: 30px;
+            width: 200px;
+            display: flex;
+            align-items: center;
+            border: 1px solid black;
+        }
+
+        .status-line-details {
+            display: inline-block;
+            margin-inline-start: 7px;
+        }
+    </style>
+
+    <script>
+        //TODO: change the hostname/port used to establish the web socket something that dynamically obtains it from
+        // the actual web server   
+        var lineStatusSocket = new WebSocket("ws://localhost:7000/websocket");
+        lineStatusSocket.onopen = function (event) {
+            // WebSocket Connected
+            var lines_header = document.getElementById("lines_header");
+            lines_header.innerHTML = "(Connected)";
+        }
+
+        lineStatusSocket.onmessage = function (event) {
+            // Websocket Message Received 
+            var message = event.data;
+
+            // Adding list of lines
+            if (message.includes("Shared Lines:")) {
+                var lines_area = document.getElementById("lines_area");
+                var line_start = 0;
+                var line_end = 0;
+                var line_number = "";
+                while (message.includes("#")) {
+                    // next line, assuming 4-digit numbers
+                    line_start = (message.indexOf("#") + 1);
+                    line_end = (message.indexOf("#") + 5);
+                    line_number = message.substring(line_start, line_end);
+                    message = message.replace("#", "");
+                    message = message.replace(line_number, "");
+
+                    // Adding details to the view
+                    var ulItem = document.createElement("ul");
+                    var divItem = document.createElement("div");
+                    var h3Item = document.createElement("h3");
+                    var h5Item = document.createElement("h5");
+                    divItem.className = "IDLE";
+                    divItem.id = line_number + "-div";
+                    h3Item.className = "status-line-details";
+                    h3Item.id = line_number + "-h3";
+                    h3Item.innerHTML = line_number;
+                    h5Item.className = "status-line-details";
+                    h5Item.id = line_number + "-h5";
+                    ulItem.appendChild(divItem);
+                    ulItem.appendChild(h3Item);
+                    ulItem.appendChild(h5Item);
+                    lines_area.appendChild(ulItem);
+                }
+            }
+
+            // Changing the status of a line
+            else if (message.includes("Status Changed:")) {
+
+                // Reading status from ': ' to '--'
+                var status_start = message.indexOf(":") + 2;
+                var status_end = message.indexOf("--");
+                var status_text = message.substring(status_start, status_end);
+
+                // Reading line number as 4 digitis after '--'
+                var line_start = message.indexOf("--") + 3;
+                var line_end = message.indexOf("--") + 7;
+                var line_text = message.substring(line_start, line_end);
+                // alert("Line: " + line_text + " CHANGE: " + status_text);
+
+                // Updating the elements accordingly
+                var line_circle = document.getElementById(line_text + "-div");
+                var line_number = document.getElementById(line_text + "-h3");
+                var line_caller_id = document.getElementById(line_text + "-h5");
+                if (line_circle != null) {
+                    line_circle.className = status_text;
+                }
+                // Alerting, show Caller ID  
+                if (status_text == "ALERTING") {
+                    if (message.includes("CallerID: ")) {
+                        // Parsing CallerID
+                        var caller_start = message.indexOf("CallerID: ") + 10;
+                        var caller_end = message.indexOf("CallerID: ") + 14;
+                        var caller_text = message.substring(caller_start, caller_end);
+                        line_caller_id.innerHTML = "&nbsp;&nbsp;(Call from: " + caller_text + ")";
+                    }
+                }
+                // Established, show the other end
+                else if (status_text == "ESTB") {
+                    // Parsing Establsihed Call details
+                    var from_start = message.indexOf("FROM: ") + 6;
+                    var from_end = message.indexOf("FROM: ") + 10;
+                    var from_text = message.substring(from_start, from_end);
+                    if (from_text != line_text) {
+                        if (line_caller_id != null) {
+                            // Line detected is listed
+                            line_caller_id.innerHTML = "&nbsp;&nbsp;(From: " + from_text + ")";
+                        }
+                        else {
+                            // Line detected isn't listed, but has an Established call from a listed one
+                            // alert("ESTB with " + line_text);
+                            line_caller_id = document.getElementById(from_text + "-h5");
+                            line_caller_id.innerHTML = "&nbsp;&nbsp;(To: " + line_text + ")";
+                        }
+                    }
+                    var to_start = message.indexOf("TO: ") + 4;
+                    var to_end = message.indexOf("TO: ") + 8;
+                    var to_text = message.substring(to_start, to_end);
+                    if (to_text != line_text) {
+                        if (line_caller_id != null) {
+                            // Line detected is listed
+                            line_caller_id.innerHTML = "&nbsp;&nbsp;(To: " + to_text + ")";
+                        }
+                        else {
+                            // Line detected isn't listed, but has an Established call to a listed one
+                            // alert("ESTB with " + line_text);
+                            line_caller_id = document.getElementById(to_text + "-h5");
+                            line_caller_id.innerHTML = "&nbsp;&nbsp;(From: " + line_text + ")";
+                        }
+                    }
+
+                }
+                else {
+                    if (line_caller_id != null) {
+                        line_caller_id.innerHTML = "";
+                    }
+                }
+
+            }
+        }
+
+        lineStatusSocket.onclose = function (event) {
+            alert("WebSocket Closed!");
+            lines_header.innerHTML = "(Closed .. Refresh to reconnect)";
+        }
+
+        lineStatusSocket.onerror = function (event) {
+            alert("WebSocket Error! Can't connect to web server");
+            lines_header.innerHTML = "Error: " + error.message;
+        }
+
+    </script>
+
+</head>
+
+<body>
+
+    <!-- Main Header -->
+    <nav class="header">
+        <h3 class="header__title">
+            <span>Shared Lines Status</span>
+        </h3>
+        <h5 id="lines_header">
+            <span>---</span>
+        </h5>
+    </nav>
+
+    <!-- Content -->
+    <div class="content">
+
+        <!--Lines Status: Circle - Description -->
+        <div id="lines_area">
+            <!-- Line Number example -->
+            <!-- <ul>
+                <div class="ALERTING" id="3340-div"></div>
+                <h3 class="status-line-details" id="3340-h3"> 3340</h3>
+            </ul> -->
+        </div>
+
+    </div>
+
+</body>
+
+</html>
